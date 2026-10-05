@@ -6,6 +6,7 @@ import type {
 import { useState, useEffect, useRef } from "react";
 import { act, command, download, request, state } from "./store.ts";
 import { Button, Icon, Help, Modal } from "./ui.tsx";
+import { installPrerequisites } from "../../../packages/contracts/src/install-order.ts";
 const steps: [InstallKind, string, string][] = [
   ["uv", "uv CLI", "下载官方 uv，校验后用于管理本地 Python。"],
   ["python", "Python 环境", "由本项目 uv 下载 Python 3.11，并建立内部环境。"],
@@ -78,20 +79,25 @@ export default function Settings({ snapshot }: { snapshot: Snapshot }) {
       <div className="page-head">
         <div>
           <h1>设置</h1>
-          <p>运行资源安装在应用目录，解压后即可配置。</p>
         </div>
       </div>
       <section className="surface install-panel">
         <div className="section-head">
           <h2>模型运行环境</h2>
           <Help>
-            先下载 uv，再安装 Python。Python
-            就绪后可分别安装推理依赖与模型。中途取消不会删除有效文件；再次安装会利用内部缓存。推理使用支持
+            依次完成
+            uv、Python、推理依赖和模型，每一步校验通过后再继续。中途取消不会删除有效文件；再次安装会利用内部缓存。推理使用支持
             CUDA 的 NVIDIA 显卡。
           </Help>
         </div>
+        <p className="install-guide">
+          按顺序完成下方 4 步，校验通过后解锁下一步。
+        </p>
         <div className="root-path">
-          <Icon name="folder" />
+          <span className="path-label">
+            <Icon name="folder" />
+            应用目录
+          </span>
           <span>{r.root}</span>
           {window.breeze ? (
             <Button onClick={() => void window.breeze!.openFolder("root")}>
@@ -105,10 +111,16 @@ export default function Settings({ snapshot }: { snapshot: Snapshot }) {
             validating =
               busy && (checking === kind || s.stage.includes("校验")),
             ready = s.status === "ready" && !busy,
-            enabled = !r.busy && !checking;
+            blocker = installPrerequisites(kind).find(
+              (k) => r[k].status !== "ready",
+            ),
+            blockedStep = steps.findIndex((step) => step[0] === blocker),
+            enabled = !r.busy && !checking && !blocker;
           return (
-            <div className="install-row" key={kind}>
-              <div className={`step-number ${ready ? "ready" : ""}`}>
+            <div className="install-row" key={kind} data-resource={kind}>
+              <div
+                className={`step-number ${ready ? "ready" : !blocker ? "current" : ""}`}
+              >
                 {ready ? <Icon name="check" /> : index + 1}
               </div>
               <div className="install-main">
@@ -128,7 +140,9 @@ export default function Settings({ snapshot }: { snapshot: Snapshot }) {
                             ? "loader"
                             : s.status === "error"
                               ? "alert"
-                              : "download"
+                              : blocker
+                                ? "clock"
+                                : "download"
                       }
                     />
                     {ready
@@ -141,10 +155,24 @@ export default function Settings({ snapshot }: { snapshot: Snapshot }) {
                           ? "已取消"
                           : s.status === "error"
                             ? "安装异常"
-                            : "未安装"}
+                            : blocker
+                              ? "等待前置步骤"
+                              : "未安装"}
                   </span>
                 </div>
-                <code>{s.path}</code>
+                <div className="resource-path">
+                  <span className="path-label">
+                    <Icon name="folder" />
+                    安装位置
+                  </span>
+                  <code title={s.path}>{s.path}</code>
+                </div>
+                {blocker && !busy ? (
+                  <p className="step-blocker" id={`prerequisite-${kind}`}>
+                    <Icon name="clock" />
+                    先完成第 {blockedStep + 1} 步：{steps[blockedStep][1]}。
+                  </p>
+                ) : null}
                 {busy ? (
                   <div className="download-state" role="status">
                     <span>
@@ -193,6 +221,9 @@ export default function Settings({ snapshot }: { snapshot: Snapshot }) {
                         tone={ready ? "" : "primary"}
                         icon="download"
                         disabled={!enabled}
+                        aria-describedby={
+                          blocker ? `prerequisite-${kind}` : undefined
+                        }
                         onClick={() => {
                           setChecks((v) => ({ ...v, [kind]: undefined }));
                           setRepair(kind);
@@ -209,6 +240,9 @@ export default function Settings({ snapshot }: { snapshot: Snapshot }) {
                       <Button
                         icon="check"
                         disabled={!enabled}
+                        aria-describedby={
+                          blocker ? `prerequisite-${kind}` : undefined
+                        }
                         onClick={() => void validate(kind)}
                       >
                         校验

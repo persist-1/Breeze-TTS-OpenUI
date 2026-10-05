@@ -11,6 +11,11 @@ import type {
 } from "../../../packages/contracts/src/index.ts";
 import { PortablePaths } from "./paths.ts";
 import { prepareInternalPython } from "./portable-python.ts";
+import { terminateOwnedChild } from "./process-tree.ts";
+import {
+  installOrder,
+  installPrerequisites,
+} from "../../../packages/contracts/src/install-order.ts";
 const missing = (p: string): Resource => ({
   path: p,
   status: "missing",
@@ -74,6 +79,7 @@ export class Installer {
   child: ChildProcessWithoutNullStreams | null = null;
   controller: AbortController | null = null;
   private cancelled = false;
+  private disposed = false;
   constructor(
     readonly paths: PortablePaths,
     readonly changed: () => void,
@@ -106,9 +112,11 @@ export class Installer {
     this.changed();
   }
   async probe() {
-    for (const kind of ["uv", "python", "dependencies", "model"] as const)
+    for (const kind of installOrder) {
+      if (this.disposed) break;
       await this.validate(kind).catch(() => {});
-    for (const kind of ["uv", "python", "dependencies", "model"] as const)
+    }
+    for (const kind of installOrder)
       if (this.runtime[kind].status === "missing") {
         this.runtime[kind].error = undefined;
         this.runtime[kind].stage = "未安装";
@@ -116,8 +124,25 @@ export class Installer {
     this.changed();
   }
   async validate(kind: InstallKind, inspectionOwner?: InstallKind) {
+    if (this.disposed) throw Error("应用正在关闭。");
     if (this.runtime.busy && !inspectionOwner)
       throw Error("请等待当前安装或校验结束。");
+    if (!inspectionOwner) {
+      const blocker = installPrerequisites(kind).find(
+        (k) => this.runtime[k].status !== "ready",
+      );
+      if (blocker) {
+        const names: Record<InstallKind, string> = {
+          uv: "uv CLI",
+          python: "Python 环境",
+          dependencies: "推理依赖",
+          model: "模型",
+        };
+        throw Error(
+          `请先完成第 ${installOrder.indexOf(blocker) + 1} 步：${names[blocker]} 的安装与校验。`,
+        );
+      }
+    }
     this.cancelled = false;
     this.runtime.busy = inspectionOwner || kind;
     this.state(kind, {
@@ -184,6 +209,7 @@ export class Installer {
     }
   }
   async inspect(kind: InstallKind): Promise<InstallPlan> {
+    if (this.disposed) throw Error("应用正在关闭。");
     if (this.runtime.busy) throw Error("请等待当前安装或校验结束。");
     this.runtime.busy = kind;
     try {
@@ -199,8 +225,7 @@ export class Installer {
         if (this.cancelled) throw e;
         reason = String(e).replace(/^Error: /, "");
       }
-      const prerequisites: InstallKind[] =
-        kind === "uv" ? [] : kind === "python" ? ["uv"] : ["uv", "python"];
+      const prerequisites = installPrerequisites(kind);
       const blockers: InstallKind[] = [];
       for (const item of prerequisites) {
         try {
@@ -218,6 +243,7 @@ export class Installer {
   }
   async install(kind: InstallKind, stopService?: () => void | Promise<void>) {
     const plan = await this.inspect(kind);
+    if (this.disposed) throw Error("应用正在关闭。");
     if (plan.valid) {
       this.state(kind, { stage: "已有文件完整，已复用；无需重复下载" });
       return;
@@ -324,7 +350,26 @@ export class Installer {
   cancel() {
     this.cancelled = true;
     this.controller?.abort();
-    this.child?.kill();
+    if (this.child) void terminateOwnedChild(this.child);
+  }
+  dispose(): Promise<void> {
+    this.disposed = true;
+    const child = this.child;
+    const stopped =
+      !child || child.exitCode !== null
+        ? Promise.resolve()
+        : new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(
+              () => reject(Error("运行环境检查进程尚未退出。")),
+              5000,
+            );
+            child.once("close", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+          });
+    this.cancel();
+    return stopped;
   }
   private async installUv() {
     if (process.platform !== "win32" || process.arch !== "x64")
@@ -414,6 +459,7 @@ export class Installer {
     args: string[],
     onLine?: (line: string) => void,
   ): Promise<string> {
+    if (this.disposed) return Promise.reject(Error("应用正在关闭。"));
     this.paths.inside(executable);
     if (executable === this.paths.python) {
       prepareInternalPython(this.paths);

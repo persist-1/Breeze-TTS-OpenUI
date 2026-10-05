@@ -11,7 +11,7 @@ import { registerAudioSave } from "../apps/desktop/electron/audio-save.ts";
 import { workspaceWindowSize } from "../apps/desktop/electron/window-options.ts";
 const project = process.cwd(),
   root = path.join(project, ".runtime/ui-review/" + Date.now()),
-  evidence = path.join(project, ".impeccable/review/space-balance");
+  evidence = path.join(project, process.argv.includes("--record-confirm") ? ".impeccable/review/record-input" : process.argv.includes("--setup-confirm") ? ".impeccable/review/settings-clarity" : ".impeccable/review/space-balance");
 fs.mkdirSync(root, { recursive: true });
 fs.mkdirSync(evidence, { recursive: true });
 const screenshots = path.join(evidence, "current");
@@ -436,6 +436,149 @@ async function main() {
     await js('window.scrollTo(0,0)');
   };
   try {
+    if (process.argv.includes("--record-confirm")) {
+      host.repo.transaction(w => { w.projects[0].title = "讲解员读稿与角色配音的长作品名称"; w.tasks[0].projectTitle = w.projects[0].title; });
+      for (const [width,height] of [[1320,920],[1152,648]]) {
+        win.setContentSize(width,height);
+        await win.loadURL(host.address + "/?record-width=" + width + "#tasks");
+        await waitFor(".task");
+        await delay();
+        ok(await js('!!document.querySelector(".input-snapshot")&&document.querySelector(".task-detail-actions .button").getAttribute("aria-expanded")==="true"'), `Record input is visible on arrival at ${width}`);
+        await js('window.scrollTo(0,0)');
+        await delay();
+        ok(await js('getComputedStyle(document.querySelector(".record-toolbar")).backgroundColor==="rgb(255, 255, 255)"&&document.querySelectorAll(".record-toolbar .filter-label svg").length===3'), `Filters have a shared white surface and labeled icons at ${width}`);
+        ok(await js('document.documentElement.scrollWidth<=innerWidth'), `Records fit ${width} without horizontal overflow`);
+        await capture(`filters-${width}`);
+        await js('(()=>{const b=document.querySelector(".task-detail-actions .button");if(b.getAttribute("aria-expanded")!=="true")b.click()})()');
+        await waitFor('.input-snapshot');
+        ok(await js('!document.querySelector(".input-snapshot .instruction-snapshot").open'), `Complete model instruction starts collapsed at ${width}`);
+        ok(await js('(()=>{const e=document.querySelector(".input-snapshot"),v=e.querySelector("section[aria-label=使用音色]"),g=e.querySelector("section[aria-label=演绎指导]");return v.textContent.includes("温暖旁白")&&v.textContent.includes("温暖、清晰")&&!v.textContent.includes("节奏舒缓")&&g.textContent.includes("节奏舒缓")&&!g.textContent.includes("成年男性")})()'), `Voice and guidance are distinct saved inputs at ${width}`);
+        await js('document.querySelector(".input-snapshot").scrollIntoView({block:"center"})');
+        await capture(`input-${width}`);
+        await click('.input-snapshot .instruction-snapshot summary');
+        ok(await js(`document.querySelector(".input-snapshot .instruction-snapshot").open&&document.querySelector(".input-snapshot .instruction-snapshot .snapshot-copy").textContent===${JSON.stringify(host.repo.workspace.tasks[0].units[0].input.instruction)}`), `Expanded instruction preserves the exact submitted text at ${width}`);
+        await js('document.querySelector(".instruction-snapshot").scrollIntoView({block:"center"})');
+        await capture(`instruction-${width}`);
+        await click('.input-snapshot .instruction-snapshot summary');
+        await js('document.querySelector(".output-details").open=true; document.querySelector(".output-input").scrollIntoView({block:"center"})');
+        await capture(`audio-input-${width}`);
+        ok(await js('document.querySelector(".output-input section[aria-label=使用音色]").textContent.includes("温暖、清晰")&&document.querySelector(".output-input section[aria-label=演绎指导]").textContent.includes("节奏舒缓")'), `Audio detail uses the same separated layout at ${width}`);
+      }
+      const base = structuredClone(host.repo.workspace.tasks[0].units[0].input);
+      const cases = [
+        {name:"descriptions-long",input:{...base,text:"长文稿包含独立换行。\n".repeat(60),voiceName:"自由描述",instruction:"声音原文\n指导原文",presentation:{voiceSource:"description",voiceDescription:"低沉清晰的声音。\n".repeat(35),directionSource:"description",directionEnabled:true,direction:"缓慢而有层次地讲述。\n".repeat(35)}}},
+        {name:"reference",input:{...base,reference:{assetId:asset,name:"角色参考录音",transcript:"这是参考录音逐字稿。"},instruction:"轻声讲述",presentation:{voiceSource:"library",voiceDescription:"",directionSource:"description",directionEnabled:true,direction:"轻声讲述"}}},
+        {name:"default-off",input:{...base,voiceName:"默认声音",instruction:"",presentation:{voiceSource:"library",voiceDescription:"",directionSource:"description",directionEnabled:false,direction:""}}},
+        {name:"legacy",input:{...base,instruction:"旧记录的声音与指导原文，不能通过换行猜测边界。",presentation:undefined}},
+      ];
+      win.setContentSize(1320,920);
+      for (const c of cases) {
+        host.repo.transaction(w => { w.tasks[0].units[0].input=c.input as any; w.outputs[0].input=c.input as any; });
+        await win.loadURL(host.address + "/?record-case=" + c.name + "#tasks");
+        await waitFor('.task');
+        await delay(700);
+        await js('(()=>{const b=document.querySelector(".task-detail-actions .button");if(b.getAttribute("aria-expanded")!=="true")b.click()})()');
+        await waitFor('.input-snapshot');
+        if(c.name==='reference') { await click('.input-snapshot .reference-snapshot summary'); ok(await js('document.querySelector(".input-snapshot .reference-snapshot").textContent.includes("这是参考录音逐字稿。")&&!document.querySelector(".input-snapshot section[aria-label=使用音色]").textContent.includes("默认声音")'), 'Reference input keeps its name and transcript, not a default voice label'); }
+        if(c.name==='default-off') ok(await js('document.querySelector(".input-snapshot section[aria-label=演绎指导]").textContent.includes("未启用")&&document.querySelector(".input-snapshot section[aria-label=使用音色]").textContent.includes("默认声音")'), 'No description and disabled guidance have explicit accurate states');
+        if(c.name==='legacy') ok(await js('!document.querySelector(".input-snapshot .instruction-snapshot").open&&document.querySelector(".input-snapshot section[aria-label=演绎指导]").textContent.includes("无法准确还原")&&!document.querySelector(".input-snapshot section[aria-label=使用音色]").textContent.includes("见下方")'), 'Historical missing fields are explicit; combined text stays collapsed');
+        if(c.name==='descriptions-long') { ok(await js('[...document.querySelectorAll(".input-snapshot .snapshot-fields .snapshot-copy")].every(e=>e.scrollHeight>e.clientHeight)'), 'Long manuscript, voice and guidance have bounded scrolling'); await js('document.querySelectorAll(".input-snapshot .snapshot-fields .snapshot-copy").forEach(e=>e.scrollTop=e.scrollHeight)'); ok(await js('[...document.querySelectorAll(".input-snapshot .snapshot-fields .snapshot-copy")].every(e=>e.scrollTop>0)'), 'Every long input can scroll to its end'); }
+        await js('document.querySelector(".input-snapshot").scrollIntoView({block:"center"})');
+        await capture(c.name);
+        if(c.name==='legacy') { await click('.input-snapshot .instruction-snapshot summary'); ok(await js('document.querySelector(".input-snapshot .instruction-snapshot").open&&document.querySelector(".input-snapshot .instruction-snapshot .snapshot-copy").textContent.includes("不能通过换行猜测边界")'), 'Click opens the unchanged historical model instruction'); await js('document.querySelector(".instruction-snapshot").scrollIntoView({block:"center"})'); await capture('legacy-expanded'); }
+        ok(await js('document.documentElement.scrollWidth<=innerWidth'), `${c.name} does not overflow horizontally`);
+      }
+      await input('.record-toolbar input','不存在的文稿');
+      ok(await js('!document.querySelector(".task")&&document.body.textContent.includes("没有符合筛选的任务")'), 'Search still filters actual records');
+      await click('.empty .button','清除筛选');
+      await waitFor('.task');
+      await click('.record-toolbar [aria-label="任务状态"]');
+      await click('.select-menu [role=option][aria-label="需要继续"]');
+      ok(await js('!document.querySelector(".task")'), 'Status dropdown still filters tasks');
+      ok(errors.length===0,'No console errors in record and audio input flows');
+      fs.writeFileSync(path.join(evidence,'functional.json'),JSON.stringify({assertions,errors,notes:['Isolated recorded input fixtures and PCM audio; no model downloads or user workspace changes. Actual Electron sizes 1320x920 and 1152x648.']},null,2));
+      fs.rmSync(path.join(evidence,'failure.txt'),{force:true});
+      console.log(JSON.stringify({assertions:assertions.length,errors,evidence}));
+      return;
+    }
+    if (process.argv.includes("--setup-confirm")) {
+      win.setContentSize(1320, 920);
+      await win.loadURL(host.address + "/#settings");
+      await waitFor(".settings-page");
+      while (host.installer.runtime.busy) await delay(100);
+      const kinds = ["uv", "python", "dependencies", "model"] as const;
+      const checkUnlock = async (complete: number) => {
+        for (const [index, kind] of kinds.entries()) {
+          Object.assign(host.installer.runtime[kind], { status: index < complete ? "ready" : "missing", error: undefined });
+        }
+        await delay(900);
+        const allowed = await js('[...document.querySelectorAll(".install-row")].map(row=>[...row.querySelectorAll(".actions button")].every(b=>!b.disabled))');
+        ok(JSON.stringify(allowed) === JSON.stringify(kinds.map((_, index) => index <= complete)), `Only completed resources and the next step are actionable after ${complete} completed steps`);
+      };
+      for (const complete of [0, 1, 2, 3, 4]) await checkUnlock(complete);
+      ok(await js('document.querySelectorAll(".resource-path .path-label").length===4&&[...document.querySelectorAll(".resource-path code")].every(e=>e.textContent.trim().length>0)'), 'Four resource paths have explicit installation labels and preserved values');
+      host.installer.runtime.service.status = "running";
+      await delay(900);
+      ok(await js('[...document.querySelectorAll(".install-row .actions button")].every(b=>!b.disabled)'), 'Ready resources remain recheckable and reinstallable while service runs');
+      host.installer.runtime.service.status = "stopped";
+      for (const kind of kinds) Object.assign(host.installer.runtime[kind], { status: "missing", error: undefined });
+      await delay(900);
+      await capture("settings-initial");
+      // Real internal uv check, followed by a genuinely missing isolated Python.
+      await click('.install-row[data-resource="uv"] button', "校验");
+      await delay(900);
+      ok(await js('!!document.querySelector(".validation-feedback.success")'), 'Actual internal uv validates and unlocks Python');
+      await click('.install-row[data-resource="python"] button', "校验");
+      await delay(650);
+      ok(await js('!!document.querySelector(".validation-feedback.failure")&&[...document.querySelectorAll(".install-row[data-resource=dependencies] button")].every(b=>b.disabled)'), 'Missing Python reports failure and keeps dependent operations locked');
+      await capture("settings-validation-failed");
+      await js('document.querySelector(".install-row[data-resource=model]").scrollIntoView({block:"center"})');
+      await capture("settings-model-locked");
+      host.repo.transaction(w => {
+        const project = w.projects[0];
+        project.title = "这是一个很长的作品名称用于下拉测试";
+        for (let n = 1; n <= 8; n++) editWorkspace(w, { type: "project.create", patch: { title: `第${n}个长名称作品测试` } });
+        editWorkspace(w, { type: "project.open", projectId: project.id });
+      });
+      for (const width of [1320, 1152]) {
+        win.setContentSize(width, 920);
+        for (const route of ["projects", "voices", "directions", "tasks"]) {
+          await win.loadURL(host.address + "/#" + route);
+          await waitFor(".inline-page-head");
+          await delay(400);
+          const head = await js('(()=>{const h=document.querySelector(".inline-page-head"),t=h.querySelector("h1").getBoundingClientRect(),d=h.querySelector("p").getBoundingClientRect(),b=h.querySelector("button")?.getBoundingClientRect();return {aligned:Math.abs((t.top+t.height/2)-(d.top+d.height/2))<2,descriptionRight:getComputedStyle(h.querySelector("p")).textAlign==="right",buttonLast:!b||b.left>=d.right-0.5,overflow:document.documentElement.scrollWidth>innerWidth,descriptionEnd:d.right,buttonStart:b?.left}})()');
+          await capture(`${route}-${width}`);
+          if (!head.aligned || !head.descriptionRight || !head.buttonLast || head.overflow) console.log(route, width, head);
+          ok(head.aligned && head.descriptionRight && head.buttonLast && !head.overflow, `${route} heading keeps inline right-aligned description and rightmost actions at ${width}px`);
+        }
+        await click('button[aria-label="作品集范围"]');
+        ok(await js('[...document.querySelectorAll(".select-menu [role=option]")].every(e=>{const full=e.getAttribute("aria-label"),parts=Array.from(new Intl.Segmenter("zh-CN",{granularity:"grapheme"}).segment(full),x=>x.segment);return e.title===full&&e.querySelector("span").textContent===(parts.length>5?parts.slice(0,5).join("")+"...":full)})'), 'All project menu labels truncate after five graphemes and retain full accessible names');
+        ok(await js('(()=>{const list=document.querySelector(".select-menu"),r=list.getBoundingClientRect();return [...list.children].filter(e=>{const q=e.getBoundingClientRect();return q.bottom>r.top+4&&q.top<r.bottom-4}).length<=5&&list.scrollHeight>list.clientHeight})()'), 'Long project menu retains five-item cap and internal scrolling');
+        await capture(`project-menu-${width}`);
+        await js('document.querySelector("button[aria-label=作品集范围]").dispatchEvent(new KeyboardEvent("keydown",{key:"End",bubbles:true}))');
+        await delay(100);
+        await js('document.querySelector("button[aria-label=作品集范围]").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))');
+        await delay();
+        ok(await js('(()=>{const b=document.querySelector("button[aria-label=作品集范围]");return b.title.startsWith("第8个")&&b.getAttribute("aria-description")===b.title&&b.querySelector("span").textContent.endsWith("...")&&!document.querySelector(".select-menu")})()'), 'Keyboard selects the actual last project; trigger is shortened but preserves full title');
+        await win.loadURL(host.address + "/#settings");
+        await waitFor(".settings-page");
+        await capture(`settings-${width}`);
+        ok(await js('document.documentElement.scrollWidth<=innerWidth'), `Settings fits ${width}px`);
+      }
+      win.setMinimumSize(0, 0);
+      win.setContentSize(390, 844);
+      for (const route of ["settings", "voices", "tasks"]) {
+        await win.loadURL(host.address + "/#" + route);
+        await waitFor(route === "settings" ? ".settings-page" : ".inline-page-head");
+        ok(await js('document.documentElement.scrollWidth<=innerWidth'), `${route} narrow reflow has no horizontal overflow`);
+        await capture(`${route}-narrow`);
+      }
+      ok(errors.length === 0, "No console errors in focused settings and page-heading flows");
+      fs.writeFileSync(path.join(evidence, "functional.json"), JSON.stringify({ assertions, errors, root, notes: ["Setup ready/missing combinations are isolated state fixtures; uv success and Python failure use actual internal resources. No downloads or user workspace changes.", "Widths 1320/1152 are actual renderer content widths at height 920; 390px is only a stress reflow fixture, not a supported desktop window."] }, null, 2));
+      console.log(JSON.stringify({ assertions: assertions.length, errors, evidence }));
+      fs.rmSync(path.join(evidence, "failure.txt"), { force: true });
+      return;
+    }
     if (process.argv.includes("--frame-only")) {
       win.setContentSize(1320, 920);
       win.webContents.setAudioMuted(true);
@@ -905,7 +1048,7 @@ async function main() {
     await win.loadURL(host.address + "/#tasks");
     await waitFor(".record-toolbar");
     await capture("records");
-    await click(".task-detail-actions button", "合成输入");
+    await waitFor(".input-snapshot");
     await capture("record-input");
     ok(
       await js(
@@ -1114,7 +1257,7 @@ async function main() {
     );
     await delay(1800);
     host.installer.validate = original;
-    await click(".install-row:nth-child(4) button", "校验");
+    await click('.install-row[data-resource="python"] button', "校验");
     await delay(500);
     await capture("validation-failure");
     ok(

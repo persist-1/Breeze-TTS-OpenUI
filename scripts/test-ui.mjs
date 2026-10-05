@@ -2,17 +2,30 @@ import { build } from "esbuild";
 import { spawn } from "node:child_process";
 import path from "node:path";
 await build({
-  entryPoints: ["scripts/studio-ui.ts"],
+  entryPoints: [
+    process.argv.includes("--management")
+      ? "scripts/management-ui.ts"
+      : "scripts/studio-ui.ts",
+  ],
   bundle: true,
   platform: "node",
   format: "cjs",
   target: "node24",
-  outfile: ".runtime/studio-ui.cjs",
+  outfile: process.argv.includes("--management")
+    ? ".runtime/management-ui.cjs"
+    : ".runtime/studio-ui.cjs",
   external: ["electron"],
 });
 const child = spawn(
   path.resolve("node_modules/electron/dist/electron.exe"),
-  [path.resolve(".runtime/studio-ui.cjs"), ...process.argv.slice(2)],
+  [
+    path.resolve(
+      process.argv.includes("--management")
+        ? ".runtime/management-ui.cjs"
+        : ".runtime/studio-ui.cjs",
+    ),
+    ...process.argv.slice(2),
+  ],
   {
     windowsHide: true,
     stdio: "inherit",

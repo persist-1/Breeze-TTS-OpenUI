@@ -98,6 +98,13 @@ export function fixedInput(
     language: s.language,
     instruction,
     voiceName: voice?.name || description || "默认声音",
+    presentation: {
+      voiceDescription: description?.trim() || "",
+      voiceSource: s.voiceSource,
+      direction: guidance?.trim() || "",
+      directionEnabled: s.directionEnabled,
+      directionSource: s.directionSource,
+    },
     reference:
       voice?.kind === "reference"
         ? {
@@ -349,10 +356,15 @@ export function editWorkspace(w: Workspace, c: Command): void {
         language: o.input.language,
         voiceSource: ref ? "library" : "description",
         voiceId: voice?.id || "",
-        voiceDescription: ref ? "" : o.input.instruction,
-        directionEnabled: !!ref && !!o.input.instruction,
+        voiceDescription: ref
+          ? ""
+          : (o.input.presentation?.voiceDescription ?? o.input.instruction),
+        directionEnabled:
+          o.input.presentation?.directionEnabled ??
+          (!!ref && !!o.input.instruction),
         directionSource: "description",
-        directionDraft: ref ? o.input.instruction : "",
+        directionDraft:
+          o.input.presentation?.direction ?? (ref ? o.input.instruction : ""),
         directionPresetId: "",
         cfg: o.input.cfg,
         seed: o.candidateSeed ?? o.input.seed,

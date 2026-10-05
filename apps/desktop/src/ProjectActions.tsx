@@ -3,15 +3,17 @@ import type {
   Project,
   Workspace,
 } from "../../../packages/contracts/src/index.ts";
-import { command, flushDrafts } from "./store.ts";
+import { command, flushDrafts, state } from "./store.ts";
 import { Button, Modal, confirmDelete } from "./ui.tsx";
 
 export function ProjectName({
   project,
   close,
+  onSaved,
 }: {
   project?: Project;
   close: () => void;
+  onSaved?: (id: string) => void;
 }) {
   const [name, setName] = useState(project?.title || ""),
     [busy, setBusy] = useState(false),
@@ -31,6 +33,7 @@ export function ProjectName({
             }
           : { type: "project.create", patch: { title: name.trim() } },
       );
+      onSaved?.(project?.id || state.get()!.workspace.currentProjectId);
       close();
     } catch (e) {
       setError(String(e).replace(/^Error: /, ""));

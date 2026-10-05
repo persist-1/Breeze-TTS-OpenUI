@@ -1,13 +1,22 @@
 import { WaveformPlayer } from "./WaveformPlayer.tsx";
-import { ItemList } from "./ItemList.tsx";
+import { useCollection } from "./useCollection.ts";
+import { CollectionControls, Pagination } from "./Collection.tsx";
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import type {
   Snapshot,
   Voice,
   Direction,
 } from "../../../packages/contracts/src/index.ts";
-import { act, command, request, report, registerDraftFlush } from "./store.ts";
-import { Button, Modal, Empty, Tabs, confirmDelete, Help } from "./ui.tsx";
+import { act, command, request, state, registerDraftFlush } from "./store.ts";
+import {
+  Button,
+  Modal,
+  Empty,
+  Tabs,
+  confirmDelete,
+  Help,
+  Icon,
+} from "./ui.tsx";
 type Props = {
   snapshot: Snapshot;
   kind: "voices" | "directions";
@@ -25,30 +34,59 @@ export default function Library({ snapshot, kind, show }: Props) {
       .includes(search.toLowerCase()),
   );
   const open = (item?: Voice | Direction) =>
-    show(<Editor voices={voices} item={item} close={() => show(null)} />);
+    show(
+      <Editor
+        voices={voices}
+        item={item}
+        close={() => show(null)}
+        onSaved={(id) => {
+          const workspace = state.get()!.workspace;
+          const all = voices ? workspace.voices : workspace.directions;
+          setSearch("");
+          collection.reveal(
+            id,
+            all.findIndex((entry) => entry.id === id),
+            "",
+          );
+        }}
+      />,
+    );
+  const collection = useCollection(items, kind, search);
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>{voices ? "音色库" : "演绎指导"}</h1>
-          <p>
-            {voices
-              ? "保存声音描述或参考录音，创作时直接选择。"
-              : "保存完整指导，按原文使用或插入个人描述。"}
-          </p>
-        </div>
+      <div className="page-head inline-page-head">
+        <h1>{voices ? "音色库" : "演绎指导"}</h1>
+        <p className="page-description">
+          {voices
+            ? "保存声音描述或参考录音，创作时直接选择。"
+            : "保存完整指导，按原文使用或插入个人描述。"}
+        </p>
         <Button tone="primary" icon="plus" onClick={() => open()}>
           {voices ? "新建音色" : "新建演绎指导"}
         </Button>
       </div>
-      <div className="library-toolbar">
-        <input
-          aria-label="搜索名称与内容"
-          placeholder="搜索名称与内容"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+      <div className="surface library-toolbar management-toolbar">
+        <label className="search-field">
+          <span className="filter-label">
+            <Icon name="search" />
+            搜索{voices ? "音色" : "演绎指导"}
+          </span>
+          <input
+            aria-label="搜索名称与内容"
+            placeholder="搜索名称与内容"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <CollectionControls
+          collection={collection}
+          noun="项"
+          filtered={!!search}
+          total={
+            (voices ? snapshot.workspace.voices : snapshot.workspace.directions)
+              .length
+          }
         />
-        <span>{items.length} 项</span>
       </div>
       {!items.length ? (
         <Empty
@@ -69,15 +107,26 @@ export default function Library({ snapshot, kind, show }: Props) {
           )}
         </Empty>
       ) : (
-        <ItemList
+        <div
           key={kind}
-          className={voices ? "library-grid" : "direction-list"}
+          ref={collection.region}
+          tabIndex={-1}
+          className={
+            collection.view === "grid"
+              ? "collection-grid library-tiles"
+              : `collection-list ${voices ? "library-grid" : "direction-list"}`
+          }
           aria-label={voices ? "音色列表" : "演绎指导列表"}
         >
-          {items.map((item) => (
-            <article className="surface library-item" key={item.id}>
+          {collection.items.map((item) => (
+            <article
+              className={`surface library-item ${collection.view === "grid" ? "collection-tile library-tile" : ""}`}
+              key={item.id}
+              data-collection-id={item.id}
+              tabIndex={-1}
+            >
               <div className="section-head">
-                <h2>{item.name}</h2>
+                <h2 title={item.name}>{item.name}</h2>
                 <span className="badge neutral">
                   {"kind" in item
                     ? item.kind === "design"
@@ -91,7 +140,9 @@ export default function Library({ snapshot, kind, show }: Props) {
                   ? item.description || item.transcript
                   : item.instruction}
               </p>
-              {"assetId" in item && item.assetId ? (
+              {collection.view === "list" &&
+              "assetId" in item &&
+              item.assetId ? (
                 <WaveformPlayer
                   source="reference"
                   id={item.assetId}
@@ -125,7 +176,9 @@ export default function Library({ snapshot, kind, show }: Props) {
                 >
                   用于创作
                 </Button>
-                <Button onClick={() => open(item)}>编辑</Button>
+                <Button onClick={() => open(item)}>
+                  {collection.view === "grid" ? "查看 / 编辑" : "编辑"}
+                </Button>
                 <Button
                   icon="trash"
                   aria-label={"删除" + item.name}
@@ -149,8 +202,9 @@ export default function Library({ snapshot, kind, show }: Props) {
               </div>
             </article>
           ))}
-        </ItemList>
+        </div>
       )}
+      <Pagination collection={collection} footer />
     </>
   );
 }
@@ -158,10 +212,12 @@ function Editor({
   voices,
   item,
   close,
+  onSaved,
 }: {
   voices: boolean;
   item?: Voice | Direction;
   close: () => void;
+  onSaved: (id: string) => void;
 }) {
   const [name, setName] = useState(item?.name || ""),
     [kind, setKind] = useState<Voice["kind"]>(
@@ -221,11 +277,12 @@ function Editor({
     }
     setBusy(true);
     try {
+      const id = item?.id || crypto.randomUUID();
       await command({
         type: voices ? "voice.save" : "direction.save",
         item: voices
           ? {
-              id: item?.id || crypto.randomUUID(),
+              id,
               name,
               kind,
               description: content,
@@ -234,8 +291,9 @@ function Editor({
               transcript: kind === "reference" ? transcript : undefined,
               consent: kind === "reference" ? consent : undefined,
             }
-          : { id: item?.id || crypto.randomUUID(), name, instruction: content },
+          : { id, name, instruction: content },
       });
+      onSaved(id);
       close();
     } catch (e) {
       setError(String(e));

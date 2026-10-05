@@ -5,6 +5,7 @@ import { Installer } from "./installer.ts";
 import { Repository } from "./repository.ts";
 import { uid, unitsFor } from "./domain.ts";
 import { wavHeader } from "./audio.ts";
+import { terminateOwnedChild } from "./process-tree.ts";
 
 export class Scheduler {
   private worker: ChildProcessWithoutNullStreams | null = null;
@@ -18,6 +19,8 @@ export class Scheduler {
   private cancelTimer: ReturnType<typeof setTimeout> | null = null;
   private stopping = false;
   private stoppingPromise: Promise<void> | null = null;
+  private startVersion = 0;
+  private shuttingDown = false;
   constructor(
     readonly repo: Repository,
     readonly installer: Installer,
@@ -26,7 +29,15 @@ export class Scheduler {
   get running() {
     return this.installer.runtime.service.status === "running";
   }
+  private acceptsWorkerMessages(child: ChildProcessWithoutNullStreams) {
+    return (
+      this.worker === child &&
+      !this.stopping &&
+      this.installer.runtime.service.status !== "error"
+    );
+  }
   async start() {
+    if (this.shuttingDown) throw Error("应用正在关闭。");
     if (
       this.worker ||
       this.stoppingPromise ||
@@ -39,10 +50,12 @@ export class Scheduler {
       message: "正在加载模型与音频解码器…",
     };
     this.changed();
+    const version = ++this.startVersion;
     try {
       for (const kind of ["python", "dependencies", "model"] as const)
         await this.installer.validate(kind);
     } catch (e) {
+      if (version !== this.startVersion || this.shuttingDown) return;
       this.installer.runtime.service = {
         status: "error",
         message: "运行资源未就绪",
@@ -51,6 +64,7 @@ export class Scheduler {
       this.changed();
       throw e;
     }
+    if (version !== this.startVersion || this.shuttingDown) return;
     this.stopping = false;
     const p = this.repo.paths;
     const child = spawn(
@@ -71,7 +85,7 @@ export class Scheduler {
     child.stderr.setEncoding("utf8");
     let pending = "";
     child.stdout.on("data", (b) => {
-      if (this.worker !== child) return;
+      if (!this.acceptsWorkerMessages(child)) return;
       pending += String(b);
       if (pending.length > 8_000_000) {
         this.fail("模型返回的数据超出协议限制。");
@@ -80,6 +94,7 @@ export class Scheduler {
       const lines = pending.split("\n");
       pending = lines.pop() || "";
       for (const line of lines) {
+        if (!this.acceptsWorkerMessages(child)) break;
         try {
           this.message(JSON.parse(line));
         } catch (e) {
@@ -94,7 +109,9 @@ export class Scheduler {
     child.on("close", (code) => {
       if (this.worker !== child) return;
       this.worker = null;
-      if (this.stopping) {
+      if (this.installer.runtime.service.status === "error") {
+        // Preserve the failure reason after the failed child finishes exiting.
+      } else if (this.stopping) {
         this.installer.runtime.service = {
           status: "stopped",
           message: "模型服务已关闭",
@@ -105,6 +122,7 @@ export class Scheduler {
   }
   stop(): Promise<void> {
     if (this.stoppingPromise) return this.stoppingPromise;
+    this.startVersion++;
     this.stopping = true;
     this.installer.runtime.service = {
       status: "stopping",
@@ -143,7 +161,7 @@ export class Scheduler {
         resolve();
       };
       child.once("close", closed);
-      child.kill();
+      void terminateOwnedChild(child);
     })
       .then(() => {
         this.installer.runtime.service = {
@@ -166,14 +184,14 @@ export class Scheduler {
     return this.stoppingPromise;
   }
   shutdown() {
-    void this.stop().catch((e) => this.installer.log(String(e)));
-    this.installer.cancel();
+    this.shuttingDown = true;
+    return Promise.all([this.stop(), this.installer.dispose()]).then(() => {});
   }
   private fail(message: string) {
     this.interrupt(message);
     const child = this.worker;
-    this.worker = null;
-    child?.kill();
+    // Keep ownership until close so shutdown can wait even after a fatal error.
+    if (child) void terminateOwnedChild(child);
     this.installer.runtime.service = {
       status: "error",
       message: "模型服务异常",

@@ -12,6 +12,8 @@
     "start": "node scripts/start.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:ui": "npm run build && node scripts/test-ui.mjs",
+    "test:management": "npm run build && node scripts/test-ui.mjs --management",
+    "test:dev": "npm run build && node --import tsx scripts/test-dev.mjs",
     "test:python": "node --import tsx scripts/test-python.mjs",
     "package:zip": "node scripts/package-one-click.mjs",
     "brand:build": "node scripts/build-brand.mjs",

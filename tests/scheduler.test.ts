@@ -66,6 +66,64 @@ test("service stays stopping until process close; repeated stop shares the pendi
   await stopping;
   assert.equal(f.scheduler.installer.runtime.service.status, "stopped");
 });
+test("shutdown waits for the model child and forbids any later service start", async () => {
+  const f = fixture();
+  const child = Object.assign(new EventEmitter(), {
+    exitCode: null,
+    kill: () => true,
+  });
+  f.protocol.worker = child;
+  let finished = false;
+  const closing = f.scheduler.shutdown().then(() => {
+    finished = true;
+  });
+  await Promise.resolve();
+  assert.equal(finished, false);
+  child.emit("close", 0);
+  await closing;
+  assert.equal(finished, true);
+  await assert.rejects(f.scheduler.start(), /正在关闭/);
+});
+
+test("a model failure retains child ownership until shutdown can wait for its exit", async () => {
+  const f = fixture();
+  const child = Object.assign(new EventEmitter(), {
+    exitCode: null,
+    kill: () => true,
+  });
+  f.protocol.worker = child;
+  f.protocol.message({ type: "fatal", message: "模型加载失败" });
+  assert.equal(f.protocol.worker, child);
+  assert.equal(f.scheduler.installer.runtime.service.error, "模型加载失败");
+  await assert.rejects(f.scheduler.start(), /当前正在运行/);
+  let finished = false;
+  const closing = f.scheduler.shutdown().then(() => {
+    finished = true;
+  });
+  await Promise.resolve();
+  assert.equal(finished, false);
+  child.emit("close", 1);
+  await closing;
+  assert.equal(finished, true);
+});
+test("stop during resource validation cancels model startup before a child can spawn", async () => {
+  const f = fixture();
+  f.protocol.worker = null;
+  f.scheduler.installer.runtime.busy = null;
+  let release!: () => void;
+  const check = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.scheduler.installer.validate = async () => {
+    await check;
+  };
+  const starting = f.scheduler.start();
+  await f.scheduler.stop();
+  release();
+  await starting;
+  assert.equal(f.protocol.worker, null);
+  assert.equal(f.scheduler.installer.runtime.service.status, "stopped");
+});
 test("validation failure blocks new generation, retry and next candidate without deleting finished audio", () => {
   const f = fixture();
   try {
@@ -145,7 +203,7 @@ test("cancel retry preserves completed candidate, avoids duplicates, and marks c
         f.repo.workspace,
       ),
     );
-    assert(f.repo.workspace.outputs.some(o => o.id === kept.id));
+    assert(f.repo.workspace.outputs.some((o) => o.id === kept.id));
   } finally {
     f.scheduler.stop();
   }

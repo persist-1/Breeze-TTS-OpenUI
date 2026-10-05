@@ -85,7 +85,9 @@ export class Repository {
             ? t.units.some((u) => u.segmentId === id)
             : kind === "voice"
               ? t.units.some(
-                  (u) => u.input.reference?.assetId === voice?.assetId,
+                  (u) =>
+                    !!voice?.assetId &&
+                    u.input.reference?.assetId === voice.assetId,
                 )
               : false,
     );

@@ -8,9 +8,26 @@ import { workspaceWindowSize } from "./window-options.ts";
 
 const development = !app.isPackaged;
 const closeSmoke = process.argv.includes("--smoke-close");
-const root = development
+const sessionSmoke = process.argv.includes("--smoke-session");
+const applicationRoot = development
   ? path.resolve(__dirname, "../..")
   : path.dirname(process.execPath);
+let root = applicationRoot;
+// The isolated lifecycle smoke uses no user workspace or runtime resources.
+if (
+  development &&
+  (closeSmoke || sessionSmoke || process.argv.includes("--smoke")) &&
+  process.env.BREEZE_DEV_TEST_ROOT
+) {
+  const testRoot = fs.realpathSync(process.env.BREEZE_DEV_TEST_ROOT);
+  const relative = path.relative(
+    path.join(applicationRoot, ".runtime"),
+    testRoot,
+  );
+  if (relative.startsWith("..") || path.isAbsolute(relative))
+    throw Error("验收目录必须位于项目 .runtime 内。");
+  root = testRoot;
+}
 const paths = new PortablePaths(root);
 const env = paths.env();
 for (const [key, value] of Object.entries(env))
@@ -36,6 +53,17 @@ app.commandLine.appendSwitch("disable-crash-reporter");
 let host: Awaited<ReturnType<typeof createHost>> | undefined;
 let windowRef: BrowserWindow | undefined,
   allowQuit = false;
+let quitting = false,
+  resourcesClosed = false,
+  quitPending: Promise<void> | undefined;
+const devIpc =
+  development && process.env.BREEZE_DEV_IPC === "1" && !!process.send;
+if (devIpc) {
+  process.on("message", (value: any) => {
+    if (value?.type === "breeze:shutdown") app.quit();
+  });
+  process.on("disconnect", () => app.quit());
+}
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -51,9 +79,38 @@ if (!app.requestSingleInstanceLock()) {
     .then(async () => {
       host = await createHost(
         root,
-        development && process.env.BREEZE_DEV_URL ? 14321 : 0,
+        development && process.env.BREEZE_DEV_URL && !devIpc ? 14321 : 0,
         path.join(__dirname, "../renderer"),
+        development ? process.env.BREEZE_DEV_URL : undefined,
       );
+      if (quitting) {
+        await host.close();
+        return;
+      }
+      if (devIpc) {
+        await new Promise<void>((resolve, reject) => {
+          const done = (error?: Error) => {
+            clearTimeout(timer);
+            process.off("message", message);
+            process.off("disconnect", disconnected);
+            error ? reject(error) : resolve();
+          };
+          const message = (value: any) => {
+            if (value?.type === "breeze:renderer-ready") done();
+            else if (value?.type === "breeze:shutdown")
+              done(Error("启动已取消"));
+          };
+          const disconnected = () => done(Error("开发启动进程已退出"));
+          const timer = setTimeout(
+            () => done(Error("等待开发界面启动超时")),
+            30000,
+          );
+          process.on("message", message);
+          process.once("disconnect", disconnected);
+          process.send!({ type: "breeze:host-ready", address: host!.address });
+        });
+      }
+      if (quitting) return;
       const url = development
         ? process.env.BREEZE_DEV_URL || host.address
         : host.address;
@@ -88,7 +145,7 @@ if (!app.requestSingleInstanceLock()) {
         icon: paths.inside("assets/brand/app.ico"),
         backgroundColor: "#f5f7f6",
         autoHideMenuBar: true,
-        show: !process.argv.includes("--smoke") && !closeSmoke,
+        show: !process.argv.includes("--smoke") && !closeSmoke && !sessionSmoke,
         webPreferences: {
           preload: path.join(__dirname, "preload.cjs"),
           contextIsolation: true,
@@ -104,7 +161,7 @@ if (!app.requestSingleInstanceLock()) {
         if (closeTimer) clearTimeout(closeTimer);
         closeTimer = null;
         if (!closePending) return;
-        if (closeSmoke) {
+        if (closeSmoke || sessionSmoke) {
           fs.writeFileSync(
             paths.inside("data/logs/electron-close-smoke.json"),
             JSON.stringify({ flushed: ok, root }),
@@ -196,7 +253,8 @@ if (!app.requestSingleInstanceLock()) {
     })
     .catch((e) => {
       allowQuit = true;
-      dialog.showErrorBox("OpenUI 无法启动", String(e));
+      if (devIpc) console.error("OpenUI 无法启动：", String(e));
+      else if (!quitting) dialog.showErrorBox("OpenUI 无法启动", String(e));
       app.quit();
     });
 }
@@ -211,6 +269,37 @@ app.on("before-quit", (event) => {
     windowRef.close();
     return;
   }
-  host?.close();
+  quitting = true;
+  if (host && !resourcesClosed) {
+    event.preventDefault();
+    quitPending ||= (async () => {
+      if (devIpc && process.connected) {
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            clearTimeout(timer);
+            process.off("message", message);
+            process.off("disconnect", done);
+            resolve();
+          };
+          const message = (value: any) => {
+            if (value?.type === "breeze:frontend-stopped") done();
+          };
+          const timer = setTimeout(done, 5000);
+          process.on("message", message);
+          process.once("disconnect", done);
+          process.send!({ type: "breeze:host-stopping" });
+        });
+      }
+      await host!.close();
+    })()
+      .catch((error) => {
+        console.error("本地服务关闭失败：", error);
+        process.exitCode = 1;
+      })
+      .then(() => {
+        resourcesClosed = true;
+        app.quit();
+      });
+  }
 });
 app.on("window-all-closed", () => app.quit());

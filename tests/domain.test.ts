@@ -87,6 +87,42 @@ test("candidate inputs are immutable snapshots with consistent base signatures",
     fixedInput(s, w, "model").signature,
   );
 });
+test("saved input keeps voice and guidance distinct without changing inference signatures", () => {
+  const w = fresh(),
+    s = w.projects[0].segments[0];
+  Object.assign(s, {
+    text: "记录文稿",
+    voiceSource: "description",
+    voiceDescription: "清晰的声音\n低沉",
+    directionEnabled: true,
+    directionDraft: "缓慢讲述\n自然停顿",
+  });
+  const input = fixedInput(s, w, "model");
+  assert.equal(input.instruction, "清晰的声音\n低沉\n缓慢讲述\n自然停顿");
+  assert.equal(input.presentation?.voiceDescription, "清晰的声音\n低沉");
+  assert.equal(input.presentation?.direction, "缓慢讲述\n自然停顿");
+  w.outputs.push({
+    id: "separate",
+    taskId: "task",
+    projectId: w.currentProjectId,
+    segmentId: s.id,
+    name: "音频",
+    createdAt: 0,
+    file: "data/audio/test.wav",
+    duration: 1,
+    input,
+    feedback: "",
+    truncated: false,
+  });
+  s.voiceDescription = "已修改";
+  s.directionDraft = "已修改";
+  editWorkspace(w, { type: "output.restore", id: "separate" });
+  assert.equal(s.voiceDescription, "清晰的声音\n低沉");
+  assert.equal(s.directionDraft, "缓慢讲述\n自然停顿");
+  assert.equal(fixedInput(s, w, "model").signature, input.signature);
+  s.directionEnabled = false;
+  assert.equal(fixedInput(s, w, "model").presentation?.direction, "");
+});
 test("deleted preset/reference requires a new choice, rather than silently downgrading", () => {
   const w = fresh(),
     s = w.projects[0].segments[0];
@@ -225,4 +261,41 @@ test("permanent voice deletion removes internal reference asset and clears draft
     false,
   );
   assert.equal(repo.workspace.projects[0].segments[0].voiceId, "");
+});
+
+test("a queued task without a reference does not block deleting unrelated described voices", () => {
+  const repo = repository();
+  repo.transaction((w) => {
+    const p = w.projects[0];
+    w.voices.push({
+      id: "unrelated",
+      name: "不相关的描述音色",
+      kind: "design",
+      description: "清晰明亮",
+      seed: 42,
+    });
+    w.tasks.push({
+      id: "queued",
+      projectId: p.id,
+      projectTitle: p.title,
+      createdAt: Date.now(),
+      status: "queued",
+      attempts: 0,
+      error: null,
+      events: [],
+      units: [
+        {
+          id: "unit",
+          segmentId: p.currentId,
+          segmentName: p.segments[0].name,
+          index: 0,
+          input: fixedInput(p.segments[0], w, "fixture"),
+          outputId: null,
+        },
+      ],
+    });
+  });
+  repo.delete("voice", "unrelated");
+  assert.equal(repo.workspace.voices.length, 0);
+  assert.equal(repo.workspace.tasks[0].status, "queued");
 });

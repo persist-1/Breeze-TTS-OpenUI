@@ -2,9 +2,10 @@ import { useId, useState } from "react";
 import type { Task } from "../../../packages/contracts/src/index.ts";
 import { Button, Icon, Help } from "./ui.tsx";
 import { Select } from "./Select.tsx";
+import { InputSnapshot } from "./InputSnapshot.tsx";
 
 export function TaskDetails({ task: t }: { task: Task }) {
-  const [view, setView] = useState<"input" | "events" | null>(null),
+  const [view, setView] = useState<"input" | "events" | null>("input"),
     [unitId, setUnitId] = useState(t.units[0]?.id || "");
   const id = useId(),
     unit = t.units.find((u) => u.id === unitId) || t.units[0];
@@ -59,48 +60,11 @@ export function TaskDetails({ task: t }: { task: Task }) {
             </Help>
           </div>
           {unit ? (
-            <>
-              <div className="snapshot-fields">
-                <div className="snapshot-field">
-                  <h5>待合成文稿</h5>
-                  <p className="snapshot-copy">
-                    {unit.input.text || "文稿为空"}
-                  </p>
-                </div>
-                <div className="snapshot-field">
-                  <h5>声音与演绎指导</h5>
-                  <p className="snapshot-copy">
-                    {unit.input.instruction ||
-                      (unit.input.reference
-                        ? "使用参考录音的声音，未指定额外演绎指导。"
-                        : "未指定描述，由模型使用默认声音。")}
-                  </p>
-                  {unit.input.reference ? (
-                    <details className="reference-snapshot">
-                      <summary>
-                        <Icon name="voices" />
-                        参考录音：{unit.input.reference.name}
-                      </summary>
-                      <p>{unit.input.reference.transcript}</p>
-                    </details>
-                  ) : null}
-                </div>
-              </div>
-              <dl className="snapshot-params">
-                <div>
-                  <dt>语言</dt>
-                  <dd>{unit.input.language === "zh" ? "中文" : "English"}</dd>
-                </div>
-                <div>
-                  <dt>随机种子</dt>
-                  <dd>{unit.input.seed + unit.index}</dd>
-                </div>
-                <div>
-                  <dt>引导强度</dt>
-                  <dd>{unit.input.cfg}</dd>
-                </div>
-              </dl>
-            </>
+            <InputSnapshot
+              key={unit.id}
+              input={unit.input}
+              seed={unit.input.seed + unit.index}
+            />
           ) : null}
         </section>
       ) : null}

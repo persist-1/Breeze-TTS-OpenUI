@@ -1,6 +1,16 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { Icon } from "./ui.tsx";
 import { ItemList } from "./ItemList.tsx";
+const graphemes = new Intl.Segmenter("zh-CN", { granularity: "grapheme" });
+const shortLabel = (label: string) => {
+  const characters = Array.from(
+    graphemes.segment(label),
+    (part) => part.segment,
+  );
+  return characters.length > 5
+    ? characters.slice(0, 5).join("") + "..."
+    : label;
+};
 export function Select({
   value,
   options,
@@ -24,6 +34,7 @@ export function Select({
     [active, setActive] = useState(0),
     [up, setUp] = useState(false);
   const selected = options.findIndex((o) => o.value === value);
+  const selectedLabel = options[selected]?.label || "请选择";
   const [bounds, setBounds] = useState({ width: 340, height: 260 });
   const show = () => {
     const r = trigger.current!.getBoundingClientRect(),
@@ -68,6 +79,8 @@ export function Select({
         className="select-trigger"
         role="combobox"
         aria-label={label}
+        aria-description={selectedLabel}
+        title={selectedLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
@@ -116,9 +129,7 @@ export function Select({
           } else if (e.key === "Tab") setOpen(false);
         }}
       >
-        <span title={options[selected]?.label}>
-          {options[selected]?.label || "请选择"}
-        </span>
+        <span>{shortLabel(selectedLabel)}</span>
         <Icon name="chevron" />
       </button>
       {open ? (
@@ -138,6 +149,8 @@ export function Select({
             <button
               type="button"
               role="option"
+              aria-label={o.label}
+              title={o.label}
               tabIndex={-1}
               id={listId + "-" + i}
               key={o.value}
@@ -146,7 +159,7 @@ export function Select({
               onPointerMove={() => setActive(i)}
               onClick={() => choose(i)}
             >
-              <span>{o.label}</span>
+              <span>{shortLabel(o.label)}</span>
               {value === o.value ? <Icon name="check" /> : null}
             </button>
           ))}

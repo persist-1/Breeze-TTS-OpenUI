@@ -2,6 +2,23 @@ import { useRef, useEffect, useState, type ReactNode } from "react";
 import { ItemList } from "./ItemList.tsx";
 import type { Direction } from "../../../packages/contracts/src/index.ts";
 const icons: Record<string, ReactNode> = {
+  list: <path d="M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01" />,
+  grid: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  previous: <path d="m15 5-7 7 7 7" />,
+  next: <path d="m9 5 7 7-7 7" />,
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 5 5" />
+    </>
+  ),
   projects: (
     <>
       <rect x="3" y="6" width="18" height="15" rx="2" />

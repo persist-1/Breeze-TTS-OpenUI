@@ -144,6 +144,39 @@ test("inspection reports unavailable prerequisites without starting a download",
   await assert.rejects(i.install("python"), /先安装/);
   assert.equal(i.runtime.busy, null);
 });
+test("validation rejects out-of-order requests before launching an interpreter", async () => {
+  const i = installer();
+  let calls = 0;
+  i.run = async () => {
+    calls++;
+    return "unexpected";
+  };
+  await assert.rejects(i.validate("python"), /第 1 步.*uv CLI/);
+  i.runtime.uv.status = "ready";
+  i.runtime.python.status = "ready";
+  await assert.rejects(i.validate("model"), /第 3 步.*推理依赖/);
+  assert.equal(calls, 0);
+  assert.equal(i.runtime.busy, null);
+  assert.equal(i.runtime.model.status, "missing");
+});
+test("model installation checks inference dependencies and refuses download until they pass", async () => {
+  const i = installer();
+  let launches = 0;
+  i.run = async () => {
+    launches++;
+    throw Error("must not install");
+  };
+  i.validate = async (kind) => {
+    if (kind === "model") throw Error("模型缺失");
+    if (kind === "dependencies") throw Error("推理依赖缺失");
+    i.runtime[kind].status = "ready";
+  };
+  const plan = await i.inspect("model");
+  assert.deepEqual(plan.blockers, ["dependencies"]);
+  await assert.rejects(i.install("model"), /先安装并校验.*dependencies/);
+  assert.equal(launches, 0);
+  assert.equal(i.runtime.busy, null);
+});
 test("repair awaits confirmed asynchronous service shutdown before writing files", async () => {
   const i = installer();
   i.runtime.service.status = "running";

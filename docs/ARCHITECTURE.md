@@ -37,6 +37,8 @@ Electron 启用沙箱和上下文隔离；本地接口仅监听回环地址并�
 
 ## 构建与分发
 
-`npm run dev` 启动 Vite 与 Electron，关闭客户端时一并结束本次开发服务。`npm run build` 输出至 `build/`；`一键打包.cmd` 检查、构建并将免安装 ZIP 输出至 `release/`。
+`npm run dev` 先确认本地工作区服务就绪，再启动 Vite 与客户端。关闭窗口或中断开发进程时先保存编辑，再停止预览，等待工作区服务和本次启动的子进程退出。Python 模型服务由设置中的开关独立控制；工作区接口就绪不代表模型已加载。`npm run test:dev` 在项目内隔离工作区验证连续启动与退出。
+
+`npm run build` 输出至 `build/`；`一键打包.cmd` 检查、构建并将免安装 ZIP 输出至 `release/`。
 
 ZIP 包含 Electron、应用代码、图标和许可文件。uv、Python、推理依赖与模型由用户在设置中安装，用户数据不随包分发。

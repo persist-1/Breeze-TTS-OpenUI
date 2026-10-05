@@ -70,6 +70,13 @@ export interface FixedInput {
   language: "zh" | "en";
   instruction: string;
   voiceName: string;
+  presentation?: {
+    voiceDescription: string;
+    voiceSource: "library" | "description";
+    direction: string;
+    directionEnabled: boolean;
+    directionSource: "preset" | "description";
+  };
   reference?: { assetId: string; transcript: string; name: string };
   cfg: number;
   seed: number;

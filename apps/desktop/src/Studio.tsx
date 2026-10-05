@@ -18,6 +18,7 @@ import { SegmentRail } from "./SegmentRail.tsx";
 import { ProjectName, deleteProject } from "./ProjectActions.tsx";
 import { Select } from "./Select.tsx";
 import { WaveformPlayer } from "./WaveformPlayer.tsx";
+import { InputSnapshot } from "./InputSnapshot.tsx";
 import {
   Button,
   Help,
@@ -840,12 +841,17 @@ export function OutputCard({
         </div>
       ) : null}
       <details className="output-details">
-        <summary>输入与试听备注</summary>
-        <p>{o.input.text}</p>
-        <p>{o.input.instruction || "未指定音色或演绎描述"}</p>
-        <small>
-          随机种子 {o.candidateSeed ?? o.input.seed} · 引导强度 {o.input.cfg}
-        </small>
+        <summary>
+          <Icon name="brackets" />
+          输入与试听备注
+          <Icon name="chevron" />
+        </summary>
+        <div className="task-detail-body output-input">
+          <InputSnapshot
+            input={o.input}
+            seed={o.candidateSeed ?? o.input.seed}
+          />
+        </div>
         <label>
           试听备注
           <textarea

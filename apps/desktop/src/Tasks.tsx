@@ -1,23 +1,11 @@
 import { useState, useEffect, type ReactNode } from "react";
-import type {
-  Snapshot,
-  TaskStatus,
-} from "../../../packages/contracts/src/index.ts";
-import { act, command } from "./store.ts";
-import { Button, Icon, Empty, confirmDelete } from "./ui.tsx";
-import { OutputCard } from "./Studio.tsx";
-import { LiveAudio } from "./LiveAudio.tsx";
+import type { Snapshot } from "../../../packages/contracts/src/index.ts";
+import { act } from "./store.ts";
+import { Button, Icon, Empty, Modal } from "./ui.tsx";
 import { Select } from "./Select.tsx";
-import { TaskDetails } from "./TaskDetails.tsx";
-const labels: Record<TaskStatus, string> = {
-  queued: "等待生成",
-  preparing: "准备中",
-  running: "生成中",
-  completed: "已完成",
-  failed: "生成失败",
-  interrupted: "已中断",
-  cancelled: "已取消",
-};
+import { TaskRecord } from "./TaskRecord.tsx";
+import { useCollection } from "./useCollection.ts";
+import { CollectionControls, Pagination } from "./Collection.tsx";
 export default function Tasks({
   snapshot,
   show,
@@ -34,7 +22,8 @@ export default function Tasks({
       ));
   const [scope, setScope] = useState(w.currentProjectId),
     [filter, setFilter] = useState("all"),
-    [search, setSearch] = useState("");
+    [search, setSearch] = useState(""),
+    [inspectedId, setInspectedId] = useState("");
   useEffect(() => {
     setScope(w.currentProjectId);
     setFilter("all");
@@ -57,6 +46,15 @@ export default function Tasks({
   );
   const projects =
     scope === "all" ? w.projects : w.projects.filter((p) => p.id === scope);
+  const ordered = projects.flatMap((p) =>
+    tasks.filter((t) => t.projectId === p.id),
+  );
+  const collection = useCollection(
+    ordered,
+    "tasks",
+    JSON.stringify([scope, filter, search]),
+  );
+  const inspected = w.tasks.find((t) => t.id === inspectedId);
   return (
     <>
       {unavailable ? (
@@ -69,15 +67,18 @@ export default function Tasks({
         </div>
       ) : null}
       <>
-        <div className="page-head">
-          <div>
-            <h1>生成记录</h1>
-            <p>按作品管理任务；已完成音频保留，继续只补未完成部分。</p>
-          </div>
+        <div className="page-head inline-page-head">
+          <h1>生成记录</h1>
+          <p className="page-description">
+            按作品管理任务；已完成音频保留，继续只补未完成部分。
+          </p>
         </div>
-        <div className="record-toolbar">
+        <div className="surface record-toolbar management-toolbar">
           <label>
-            作品集
+            <span className="filter-label">
+              <Icon name="projects" />
+              作品集
+            </span>
             <Select
               label="作品集范围"
               value={scope}
@@ -89,7 +90,10 @@ export default function Tasks({
             />
           </label>
           <label>
-            任务状态
+            <span className="filter-label">
+              <Icon name="tasks" />
+              任务状态
+            </span>
             <Select
               label="任务状态"
               value={filter}
@@ -103,16 +107,23 @@ export default function Tasks({
             />
           </label>
           <label className="search-field">
-            搜索
+            <span className="filter-label">
+              <Icon name="search" />
+              搜索
+            </span>
             <input
+              aria-label="搜索生成记录"
               placeholder="搜索文稿或作品名称"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
-          <span>
-            {tasks.length} / {inScope.length} 个任务
-          </span>
+          <CollectionControls
+            filtered={!!search || filter !== "all"}
+            collection={collection}
+            noun="个任务"
+            total={inScope.length}
+          />
         </div>
 
         {!tasks.length ? (
@@ -137,157 +148,78 @@ export default function Tasks({
             )}
           </Empty>
         ) : (
-          projects.map((p) => {
-            const group = tasks.filter((t) => t.projectId === p.id);
-            return group.length ? (
-              <section key={p.id} className="task-group">
-                {scope === "all" ? (
-                  <div className="section-head">
-                    <h2>{p.title}</h2>
-                    <Button
-                      onClick={() => {
-                        act({ type: "project.open", projectId: p.id });
-                        location.hash = "studio";
-                      }}
-                    >
-                      打开作品
-                    </Button>
-                  </div>
-                ) : null}
-                {group.map((t) => {
-                  const outputs = w.outputs.filter((o) => o.taskId === t.id),
-                    done = t.units.filter((u) => u.outputId !== null).length,
-                    busy = ["queued", "preparing", "running"].includes(
-                      t.status,
-                    );
-                  return (
-                    <article className="surface task" key={t.id}>
-                      <div className="section-head">
-                        <div>
-                          <h3>
-                            {t.units.length === 1
-                              ? t.units[0].segmentName
-                              : `${t.units.length} 份音频`}
-                          </h3>
-                          <small>
-                            {new Date(t.createdAt).toLocaleString("zh-CN")} · 第{" "}
-                            {Math.max(1, t.attempts)} 次运行
-                          </small>
-                        </div>
-                        <span
-                          className={`badge ${["failed", "interrupted"].includes(t.status) ? "failure" : busy ? "processing" : t.status === "completed" ? "success" : "neutral"}`}
-                        >
-                          <Icon
-                            name={
-                              busy
-                                ? "clock"
-                                : t.status === "completed"
-                                  ? "check"
-                                  : "alert"
-                            }
-                          />
-                          {t.cancelRequested ? "取消中…" : labels[t.status]}
-                        </span>
-                      </div>
-                      <div className="task-progress">
-                        <span>
-                          {done} / {t.units.length} 份已处理 · {outputs.length}{" "}
-                          份可试听
-                        </span>
-                        <progress value={done} max={t.units.length} />
-                      </div>
-                      {t.error ? (
-                        <p className="inline-error">{t.error}</p>
-                      ) : null}
-                      <div className="actions">
-                        {t.stream ? (
-                          <LiveAudio
-                            key={t.stream.file}
-                            taskId={t.id}
-                            file={t.stream.file}
-                          />
-                        ) : null}
-                        {busy ? (
-                          <Button
-                            disabled={!!t.cancelRequested}
-                            onClick={() =>
-                              act({ type: "task.cancel", id: t.id })
-                            }
-                          >
-                            {t.status === "queued" ? "取消排队" : "取消生成"}
-                          </Button>
-                        ) : ["failed", "interrupted", "cancelled"].includes(
-                            t.status,
-                          ) && done < t.units.length ? (
-                          <Button
-                            tone="primary"
-                            icon="refresh"
-                            disabled={
-                              snapshot.runtime.service.status !== "running" ||
-                              !!snapshot.runtime.busy ||
-                              ["python", "dependencies", "model"].some(
-                                (k) =>
-                                  snapshot.runtime[k as "python"].status !==
-                                  "ready",
-                              )
-                            }
-                            onClick={() =>
-                              act({ type: "task.retry", id: t.id })
-                            }
-                          >
-                            继续未完成部分
-                          </Button>
-                        ) : null}
-                        <Button
-                          disabled={busy}
-                          icon="trash"
-                          onClick={() =>
-                            confirmDelete(
-                              "task",
-                              "这条生成记录",
-                              "删除这条记录及其所有音频。草稿与其他生成记录保留。",
-                              () =>
-                                command({
-                                  type: "delete",
-                                  value: "task",
-                                  id: t.id,
-                                }),
-                              show,
-                            )
-                          }
-                        >
-                          删除记录
-                        </Button>
-                      </div>
-                      <TaskDetails task={t} />
-                      {outputs.length ? (
-                        <details
-                          className="task-audio"
-                          open={t.status === "completed"}
-                        >
-                          <summary>试听音频（{outputs.length}）</summary>
-                          <div className="output-list">
-                            {outputs.map((o) => (
-                              <OutputCard
-                                key={o.id}
-                                output={o}
-                                segment={p.segments.find(
-                                  (s) => s.id === o.segmentId,
-                                )}
-                                snapshot={snapshot}
-                                show={show}
-                              />
-                            ))}
-                          </div>
-                        </details>
-                      ) : null}
-                    </article>
+          <div
+            ref={collection.region}
+            tabIndex={-1}
+            className={
+              collection.view === "grid"
+                ? "collection-grid task-tiles"
+                : "collection-list task-list"
+            }
+            aria-label="生成记录列表"
+          >
+            {collection.view === "grid"
+              ? collection.items.map((t) => (
+                  <TaskRecord
+                    key={t.id}
+                    task={t}
+                    snapshot={snapshot}
+                    show={show}
+                    compact
+                    onInspect={() => setInspectedId(t.id)}
+                  />
+                ))
+              : projects.map((p) => {
+                  const group = collection.items.filter(
+                    (t) => t.projectId === p.id,
                   );
+                  return group.length ? (
+                    <section key={p.id} className="task-group">
+                      {scope === "all" ? (
+                        <div className="section-head">
+                          <h2 title={p.title}>{p.title}</h2>
+                          <Button
+                            onClick={() => {
+                              act({ type: "project.open", projectId: p.id });
+                              location.hash = "studio";
+                            }}
+                          >
+                            打开作品
+                          </Button>
+                        </div>
+                      ) : null}
+                      {group.map((t) => (
+                        <TaskRecord
+                          key={t.id}
+                          task={t}
+                          snapshot={snapshot}
+                          show={show}
+                        />
+                      ))}
+                    </section>
+                  ) : null;
                 })}
-              </section>
-            ) : null;
-          })
+          </div>
         )}
+        <Pagination collection={collection} footer />
+        {inspected ? (
+          <Modal title="生成记录" onClose={() => setInspectedId("")}>
+            <div className="inspector-context">
+              <Icon name="projects" />
+              <span>
+                {w.projects.find((p) => p.id === inspected.projectId)?.title ||
+                  inspected.projectTitle}
+              </span>
+            </div>
+            <TaskRecord
+              key={inspected.id}
+              task={inspected}
+              snapshot={snapshot}
+              show={show}
+              inspector
+            />
+          </Modal>
+        ) : null}
       </>
     </>
   );

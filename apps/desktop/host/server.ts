@@ -14,7 +14,12 @@ import { inspectWav } from "./audio.ts";
 import { makeBackup, importBackup } from "./backup.ts";
 import { readWaveform } from "./waveform.ts";
 
-export async function createHost(root: string, port = 0, renderer?: string) {
+export async function createHost(
+  root: string,
+  port = 0,
+  renderer?: string,
+  developmentOrigin?: string,
+) {
   const paths = new PortablePaths(root),
     repo = new Repository(paths);
   let version = 0;
@@ -110,7 +115,7 @@ export async function createHost(root: string, port = 0, renderer?: string) {
         route = url.pathname;
       if (
         req.method === "POST" &&
-        ![address, "http://127.0.0.1:4320"].includes(String(req.headers.origin))
+        ![address, developmentOrigin].includes(String(req.headers.origin))
       ) {
         json(res, { error: "请求来源不受信任" }, 403);
         return;
@@ -326,6 +331,7 @@ export async function createHost(root: string, port = 0, renderer?: string) {
   });
   address = `http://127.0.0.1:${(server.address() as any).port}`;
   void installer.probe();
+  let closing: Promise<void> | undefined;
   return {
     server,
     address,
@@ -334,9 +340,13 @@ export async function createHost(root: string, port = 0, renderer?: string) {
     installer,
     scheduler,
     snapshot,
-    close: () => {
-      scheduler.shutdown();
-      server.close();
-    },
+    close: () =>
+      (closing ||= (async () => {
+        const stopped = new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+        server.closeAllConnections();
+        await Promise.all([stopped, scheduler.shutdown()]);
+      })()),
   };
 }
