@@ -34,7 +34,7 @@
 [清嗓子]麻花鸭游进五彩霞，五彩霞网住麻花鸭。
 [不自信]怎么样，我的水平还可以吧？
 ```
-
+> 如果README中无法试听，可以自行下载`assets/ForDocs/绕口令test.wav` 进行试听
 <details>
 <summary>查看更多界面</summary>
 
@@ -75,8 +75,8 @@
 需要 Windows 与 Node.js 24+。克隆仓库后安装依赖，启动开发客户端：
 
 ```powershell
-git clone "<仓库地址>" breeze-tts-openui
-cd breeze-tts-openui
+git clone https://github.com/persist-1/Breeze-TTS-OpenUI.git
+cd Breeze-TTS-OpenUI
 $env:electron_config_cache = "$PWD\.runtime\cache\electron"
 npm install --cache .runtime/cache/npm
 npm run dev
