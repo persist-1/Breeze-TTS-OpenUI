@@ -1,0 +1,14 @@
+breeze-tts-openui — independent community frontend
+Copyright 2026 breeze-tts-openui contributors.
+Application source code: Apache License, Version 2.0 (LICENSE).
+Upstream inference code: https://github.com/breezeblue-ai/breeze-tts
+Vendored source attribution: services/python/vendor/breeze/NOTICE.md
+
+Model license notice (verbatim from official agreement, Section 4):
+Breeze TTS 2 is licensed under the BreezeBlue Research and Non-Commercial
+License Agreement. Copyright (c) 2026 RESONIA, INC. All Rights Reserved.
+
+Model weights are downloaded separately; they are not included in the application ZIP.
+MODEL_LICENSE applies to model materials and self-hosted outputs, not to Apache-licensed code.
+This community project is not affiliated with or endorsed by BreezeBlue / RESONIA, INC.
+No upstream trademark or logo license is granted by this project.

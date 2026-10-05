@@ -1,0 +1,2 @@
+modelscope==1.37.1
+requests>=2.32,<3

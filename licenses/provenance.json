@@ -1,0 +1,22 @@
+{
+  "retrievedAt": "2026-10-04T16:34:44.435Z",
+  "sources": [
+    {
+      "file": "LICENSE",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "file": "MODEL_LICENSE",
+      "url": "https://huggingface.co/BreezeBlue/Breeze-TTS-2/resolve/3e28c5151381a722f1d8661b4118c298caa77aa4/LICENSE",
+      "revision": "3e28c5151381a722f1d8661b4118c298caa77aa4",
+      "sha256": "f158b88cd51473925e1ce8c39f4c7c9e419304ad71371896c4ff18fa1351dca2",
+      "bytes": 18719
+    }
+  ],
+  "modelScopeMirror": {
+    "url": "https://www.modelscope.cn/models/BreezeBlue/Breeze-TTS-2/resolve/master/LICENSE",
+    "matchesPinnedModelLicense": true
+  }
+}

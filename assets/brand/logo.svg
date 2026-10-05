@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">OpenUI community voice logo</title>
+  <desc id="desc">An open voice aperture surrounding three rounded sound bars. An independent community identity.</desc>
+  <rect x="48" y="48" width="928" height="928" rx="216" fill="#315f49"/>
+  <g fill="none" stroke="#fff" stroke-width="84" stroke-linecap="round">
+    <path d="M344 278 C224 396 224 628 344 746"/>
+    <path d="M680 278 C800 396 800 628 680 746"/>
+  </g>
+  <g fill="#fff">
+    <rect x="364" y="414" width="72" height="196" rx="36"/>
+    <rect x="468" y="342" width="88" height="340" rx="44"/>
+    <rect x="588" y="414" width="72" height="196" rx="36"/>
+  </g>
+</svg>

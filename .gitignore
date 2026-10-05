@@ -1,0 +1,46 @@
+# 依赖、构建与发行产物
+node_modules/
+/build/
+/release/
+/coverage/
+*.tsbuildinfo
+
+# 本地运行环境、模型权重与用户数据（仅限项目根目录）
+/.runtime/
+/models/
+/data/
+
+# Python 环境与缓存
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 本地配置、日志与系统杂项
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 本地设计资料与智能体工作记录
+/AGENTS.md
+/DESIGN.md
+/PRODUCT.md
+/SURFACE.md
+/PDR.md
+/docs/PDR.md
+/.impeccable/
+/CHANGED/
+/docs/CHANGED/
+前端原型设计/
+/docs/前端原型设计*.zip
+
+

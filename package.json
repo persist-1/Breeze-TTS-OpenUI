@@ -1,0 +1,44 @@
+{
+  "name": "breeze-tts-openui",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "description": "Portable Breeze TTS creation workspace",
+  "main": "build/desktop/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "node scripts/dev.mjs --web",
+    "build": "tsc --noEmit && vite build && node scripts/build-host.mjs",
+    "start": "node scripts/start.mjs",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:ui": "npm run build && node scripts/test-ui.mjs",
+    "test:python": "node --import tsx scripts/test-python.mjs",
+    "package:zip": "node scripts/package-one-click.mjs",
+    "brand:build": "node scripts/build-brand.mjs",
+    "licenses:sync": "node scripts/sync-licenses.mjs",
+    "brand:check": "node scripts/verify-brand.mjs"
+  },
+  "dependencies": {
+    "adm-zip": "0.6.1",
+    "lucide-react": "1.51.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "electron": "44.5.1",
+    "esbuild": "0.28.2",
+    "prettier": "^3.9.9",
+    "rcedit": "5.0.2",
+    "tsx": "^4.21.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.2"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "license": "Apache-2.0"
+}
